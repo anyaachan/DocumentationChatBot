@@ -7,6 +7,8 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
+from langchain.chains import create_history_aware_retriever
+from langchain_core.prompts import MessagesPlaceholder
 load_dotenv()
 
 openai.api_key = os.environ['OPENAI_API_KEY']
@@ -22,6 +24,14 @@ Answer the following question:
 
 {question}"""
 
+contextualize_system_prompt =  (
+    "Given a chat history and the latest user question "
+    "which might reference context in the chat history, "
+    "formulate a standalone question which can be understood "
+    "without the chat history. Do NOT answer the question, "
+    "just reformulate it if needed and otherwise return it as is."
+)
+
 question = "Name all of the schedulers in text to video stable diffusion endpoint"
 model = ChatOpenAI()
 
@@ -34,6 +44,17 @@ vector_store = Chroma(collection_name="StableDiffusionAPIDocs",
 
 docs = vector_store.similarity_search(question)
 retriever = vector_store.as_retriever()
+
+contextualize_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", contextualize_system_prompt),
+        MessagesPlaceholder("chat_history"),
+        ("human", "{input}"),
+    ]
+)
+history_aware_retriever = create_history_aware_retriever(
+    model, retriever, contextualize_prompt
+)
 
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
