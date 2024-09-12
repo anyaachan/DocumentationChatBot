@@ -30,8 +30,8 @@ def clean_repeating_data(documents: list[Document]):
 
 def split_text(documents: list[Document]):
     text_splitter = RecursiveCharacterTextSplitter( # recommended splitter for generic text
-        chunk_size=300,
-        chunk_overlap=100,
+        chunk_size=2000, # 1500 characters per chunk as the documentation is failry complex
+        chunk_overlap=200,
         length_function=len,
         add_start_index=True,
     )
@@ -51,14 +51,15 @@ def save_chunks(chunks: list[Document]):
     )
 
     vector_store.add_documents(chunks)
-    vector_store.persist()
     print(f"Saved {len(chunks)} chunks.")
+    return vector_store
 
 def main():
     documents = load_documents()
     clean_repeating_data(documents)
     chunks = split_text(documents)
     save_chunks(chunks)
+
 
 if __name__ == "__main__":
     main()
