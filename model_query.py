@@ -16,9 +16,14 @@ load_dotenv()
 
 openai.api_key = os.environ['OPENAI_API_KEY']
 
-chat_history = []
+model = ChatOpenAI()
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+
 question = "What is image to image API?"
 follow_up_question = "What are the schedulers avaliable for it?"
+
+# setup chat history
+chat_history = []
 
 rag_prompt = """You are an assistant for question-answering tasks. \
 Use the following pieces of retrieved context to answer the question. \
@@ -27,6 +32,7 @@ Use three sentences maximum and keep the answer concise.\
 
 {context}"""
 
+# rephrasing follow-up questions to match with the context
 contextualize_system_prompt =  (
     "Given a chat history and the latest user question "
     "which might reference context in the chat history, "
@@ -35,22 +41,18 @@ contextualize_system_prompt =  (
     "just reformulate it if needed and otherwise return it as is."
 )
 
-model = ChatOpenAI()
-
 rag_prompt = ChatPromptTemplate.from_messages(
     [
         ("system", rag_prompt),
         MessagesPlaceholder("chat_history"),
-        ("user", "{input}"),
+        ("user", "{input}"), # question
     ]
 )
 
-embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+# load vector store
 vector_store = Chroma(collection_name="StableDiffusionAPIDocs",
     embedding_function=embeddings,
     persist_directory="chroma")
-
-docs = vector_store.similarity_search(question)
 retriever = vector_store.as_retriever()
 
 contextualize_prompt = ChatPromptTemplate.from_messages(
@@ -61,6 +63,7 @@ contextualize_prompt = ChatPromptTemplate.from_messages(
     ]
 )
 
+# incorporate chat history into the retrieval process
 history_aware_retriever = create_history_aware_retriever(
     model, retriever, contextualize_prompt
 )
@@ -71,9 +74,18 @@ def format_docs(docs):
 question_answer_chain = create_stuff_documents_chain(model, rag_prompt)
 rag_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
+def ask_question(chain, question, chat_history):
+    return chain.invoke({"input": question, "chat_history": chat_history})
 
-answer_01 = rag_chain.invoke({"input": question, "chat_history": chat_history})
-chat_history.extend([HumanMessage(content=question), answer_01["answer"]]) # ?
-answer_02 = rag_chain.invoke({"input": follow_up_question, "chat_history": chat_history})
+def update_chat_history(chat_history, question, answer):
+    chat_history.append(HumanMessage(content=question))
+    chat_history.append(HumanMessage(content=answer))
+
+answer_01 = ask_question(rag_chain, question, chat_history)
+update_chat_history(chat_history, question, answer_01["answer"])
+
+answer_02 = ask_question(rag_chain, follow_up_question, chat_history)
+update_chat_history(chat_history, follow_up_question, answer_02["answer"])
+
 print(answer_01["answer"])
 print(answer_02["answer"])
